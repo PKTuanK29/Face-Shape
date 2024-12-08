@@ -1,220 +1,131 @@
-# -*- coding: utf-8 -*-
+import streamlit as st
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt  # Đảm bảo thư viện matplotlib đã được cài đặt
-import shutil
-import tensorflow as tf
-from sklearn.model_selection import train_test_split
-from PIL import Image
+import matplotlib.pyplot as plt
 import seaborn as sns
-from termcolor import colored
-from tensorflow import keras
-from tensorflow.keras import layers, models
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from keras.layers import Dense, Dropout
-from tensorflow.keras.callbacks import Callback, EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras import Model
-from tensorflow.keras.layers import Layer
-from keras.utils import plot_model
-from tensorflow.keras import optimizers
-from pathlib import Path
 import os
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.optimizers import Adam
 from sklearn.metrics import classification_report, confusion_matrix
-import itertools
-from google.colab import drive
+from PIL import Image
+import tensorflow as tf
 
-# Mount Google Drive
-drive.mount('/content/drive')
+# Cài đặt thư viện Streamlit
+st.set_page_config(page_title="Face Shape Prediction", layout="wide")
 
-# Define the dataset directories
-DATA_DIR = '/content/drive/MyDrive/archive/FaceShape Dataset'
+# Tải mô hình đã huấn luyện trước đó (chỉ cần tải một lần)
+@st.cache_resource
+def load_pretrained_model():
+    model = load_model('MyModel.keras')  # Đảm bảo rằng mô hình của bạn đã được tải lên hoặc có sẵn trên hệ thống
+    return model
+
+model = load_pretrained_model()
+
+# Đọc dữ liệu từ thư mục
+DATA_DIR = '/path/to/your/dataset'
 TRAIN_DIR = os.path.join(DATA_DIR, 'training_set')
 TEST_DIR = os.path.join(DATA_DIR, 'testing_set')
 
-# Function to check the number of classes
-def num_of_classes(folder_dir, folder_name):
-    classes = [class_name for class_name in os.listdir(folder_dir)]
-    print(f'Number of classes in {folder_name} folder: {len(classes)}')
+# Hiển thị thông tin tổng quan về bộ dữ liệu
+def display_data_overview():
+    # Hiển thị thông tin về bộ dữ liệu
+    st.title('Dự đoán hình dạng khuôn mặt')
+    
+    classes = [class_name for class_name in os.listdir(TRAIN_DIR)]
+    st.write(f"Number of classes: {len(classes)}")
 
-# Check number of classes in train and test directories
-num_of_classes(TRAIN_DIR, 'train')
-num_of_classes(TEST_DIR, 'test')
-
-# Count the number of images per class in training set
-classes = [class_name for class_name in os.listdir(TRAIN_DIR)]
-count = []
-for class_name in classes:
-    count.append(len(os.listdir(os.path.join(TRAIN_DIR, class_name))))
-
-# Plot number of samples per label
-plt.figure(figsize=(15, 4))
-ax = sns.barplot(x=classes, y=count, color='navy')
-plt.xticks(rotation=285)
-for i in ax.containers:
-    ax.bar_label(i,)
-plt.title('Number of samples per label', fontsize=25, fontweight='bold')
-plt.xlabel('Labels', fontsize=15)
-plt.ylabel('Counts', fontsize=15)
-plt.yticks(np.arange(0, 105, 10))
-plt.show()
-
-# Function to create a DataFrame for the dataset
-def create_df(folder_path):
-    all_images = []
+    count = []
     for class_name in classes:
-        class_path = os.path.join(folder_path, class_name)
-        all_images.extend([(os.path.join(class_path, file_name), class_name) for file_name in os.listdir(class_path)])
-    df = pd.DataFrame(all_images, columns=['file_path', 'label'])
-    return df
+        count.append(len(os.listdir(os.path.join(TRAIN_DIR, class_name))))
+    
+    # Vẽ biểu đồ số lượng mẫu mỗi lớp
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(x=classes, y=count, ax=ax, palette='viridis')
+    ax.set_title('Số lượng mẫu mỗi lớp', fontsize=16)
+    ax.set_xlabel('Nhóm', fontsize=12)
+    ax.set_ylabel('Số lượng', fontsize=12)
+    st.pyplot(fig)
 
-# Create train and test DataFrames
-train_df = create_df(TRAIN_DIR)
-test_df = create_df(TEST_DIR)
+# Hiển thị hình ảnh ngẫu nhiên từ tập huấn luyện
+def display_sample_images():
+    st.subheader("Một số hình ảnh mẫu")
+    df_unique = pd.DataFrame([(os.path.join(TRAIN_DIR, class_name, img_name), class_name) 
+                              for class_name in os.listdir(TRAIN_DIR) 
+                              for img_name in os.listdir(os.path.join(TRAIN_DIR, class_name))])
+    
+    fig, axes = plt.subplots(ncols=5, figsize=(15, 5))
+    for i, (img_path, label) in enumerate(df_unique.sample(5).values):
+        img = Image.open(img_path).resize((224, 224))
+        axes[i].imshow(img)
+        axes[i].set_title(label)
+        axes[i].axis('off')
+    st.pyplot(fig)
 
-# Print number of samples in train and test sets
-print(colored(f'Number of samples in train: {len(train_df)}', 'blue', attrs=['bold']))
-print(colored(f'Number of samples in test: {len(test_df)}', 'blue', attrs=['bold']))
+# Chức năng dự đoán hình ảnh
+def preprocess_image(image):
+    img = Image.open(image).resize((224, 224))
+    img_array = np.array(img) / 255.0
+    return np.expand_dims(img_array, axis=0)
 
-# Display some images from the dataset
-df_unique = train_df.copy().drop_duplicates(subset=["label"]).reset_index()
-fig, axes = plt.subplots(ncols=5, figsize=(8, 7), subplot_kw={'xticks': [], 'yticks': []})
-for i, ax in enumerate(axes.flat):
-    ax.imshow(plt.imread(df_unique.file_path[i]))
-    ax.set_title(df_unique.label[i], fontsize=12)
-plt.tight_layout(pad=0.5)
-plt.show()
+# Xử lý dữ liệu người dùng upload và dự đoán
+uploaded_file = st.file_uploader("Chọn hình ảnh để dự đoán", type=['jpg', 'jpeg', 'png'])
+if uploaded_file is not None:
+    st.image(uploaded_file, caption="Hình ảnh đầu vào", use_column_width=True)
+    preprocessed_image = preprocess_image(uploaded_file)
+    predictions = model.predict(preprocessed_image)
+    predicted_class = np.argmax(predictions)
+    st.write(f"Nhóm dự đoán: {predicted_class}")
 
-# Data augmentation for training images
-train_datagen = ImageDataGenerator(
-    rescale=1./255,
-    rotation_range=20,
-    width_shift_range=0.2,
-    height_shift_range=0.2,
-    zoom_range=0.1,
-    horizontal_flip=True,
-    shear_range=0.1,
-    fill_mode='nearest',
-)
+# Hiển thị thống kê và kết quả huấn luyện
+def display_training_results():
+    # Ví dụ về việc hiển thị kết quả huấn luyện trong Streamlit
+    history = model.history  # Đảm bảo rằng bạn lưu lại `history` khi huấn luyện mô hình
+    st.subheader("Đồ thị kết quả huấn luyện")
+    
+    # Đồ thị mất mát
+    fig, ax = plt.subplots()
+    ax.plot(history.history['loss'], label='Mất mát (Training)', color='b')
+    ax.plot(history.history['val_loss'], label='Mất mát (Validation)', color='r')
+    ax.set_title('Mất mát qua các epoch')
+    ax.set_xlabel('Epochs')
+    ax.set_ylabel('Loss')
+    ax.legend()
+    st.pyplot(fig)
 
-train_generator = train_datagen.flow_from_dataframe(
-    dataframe=train_df,
-    x_col='file_path',
-    y_col='label',
-    target_size=(224, 224),
-    color_mode='rgb',
-    class_mode='categorical',
-    batch_size=32,
-    shuffle=True,
-    seed=42,
-)
+    # Đồ thị độ chính xác
+    fig, ax = plt.subplots()
+    ax.plot(history.history['accuracy'], label='Độ chính xác (Training)', color='b')
+    ax.plot(history.history['val_accuracy'], label='Độ chính xác (Validation)', color='r')
+    ax.set_title('Độ chính xác qua các epoch')
+    ax.set_xlabel('Epochs')
+    ax.set_ylabel('Accuracy')
+    ax.legend()
+    st.pyplot(fig)
 
-# Test data generator
-test_datagen = ImageDataGenerator(rescale=1./255)
-test_generator = test_datagen.flow_from_dataframe(
-    dataframe=test_df,
-    x_col='file_path',
-    y_col='label',
-    target_size=(224, 224),
-    class_mode='categorical',
-    batch_size=32,
-    seed=42,
-    shuffle=False
-)
+# Xử lý hiển thị confusion matrix
+def display_confusion_matrix():
+    st.subheader("Confusion Matrix")
+    # Giả sử bạn có một bộ dữ liệu test và hàm để đánh giá mô hình
+    y_true = np.array([])  # Nhãn thực tế
+    y_pred = np.array([])  # Dự đoán của mô hình
+    
+    cm = confusion_matrix(y_true, y_pred)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=classes, yticklabels=classes)
+    plt.title('Confusion Matrix')
+    st.pyplot(fig)
 
-# Load pre-trained MobileNetV2 model without top layer
-pre_trained_model = MobileNetV2(
-    input_shape=(224, 224, 3),
-    include_top=False,
-    weights='imagenet',
-    pooling='avg'
-)
+# Hiển thị tất cả các phần của ứng dụng
+if st.button("Hiển thị tổng quan bộ dữ liệu"):
+    display_data_overview()
 
-# Freeze layers until block_16_expand
-pre_trained_model.trainable = True
-set_trainable = False
-for layer in pre_trained_model.layers:
-    if layer.name == 'block_16_expand':
-        set_trainable = True
-    if set_trainable:
-        layer.trainable = True
-    else:
-        layer.trainable = False
+if st.button("Hiển thị một số hình ảnh mẫu"):
+    display_sample_images()
 
-# Create the model with custom layers
-model = models.Sequential()
-model.add(pre_trained_model)
-model.add(layers.Flatten())
-model.add(layers.Dense(256, activation='relu'))
-model.add(layers.Dense(128, activation='relu'))
-model.add(layers.Dense(5, activation='softmax'))
+if st.button("Hiển thị kết quả huấn luyện"):
+    display_training_results()
 
-# Compile the model
-model.compile(optimizer=optimizers.Adam(learning_rate=0.001),
-              loss='categorical_crossentropy',
-              metrics=['accuracy'])
-
-# Model checkpoint and early stopping
-checkpoint_cb = ModelCheckpoint('MyModel.keras', save_best_only=True)
-earlystop_cb = EarlyStopping(patience=10, restore_best_weights=True)
-reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6)
-
-# Train the model
-history = model.fit(
-    train_generator,
-    steps_per_epoch=len(train_generator),
-    validation_data=test_generator,
-    epochs=100,
-    callbacks=[checkpoint_cb, earlystop_cb, reduce_lr]
-)
-
-# Load the best model
-best_model = models.load_model('MyModel.keras')
-
-# Evaluate the model on the test set
-test_loss, test_acc = best_model.evaluate(test_generator)
-print(colored(f'Test Loss: {round(test_loss, 3)}', 'green', attrs=['bold']))
-print(colored(f'Test Accuracy: {round(test_acc, 3)}', 'green', attrs=['bold']))
-
-# Plot training results
-result_df = pd.DataFrame(history.history)
-x = np.arange(len(result_df))
-fig, ax = plt.subplots(3, 1, figsize=(15, 12))
-
-# Loss plot
-ax[0].plot(x, result_df.loss, label='loss', linewidth=3)
-ax[0].plot(x, result_df.val_loss, label='val_loss', linewidth=2, ls='-.', c='r')
-ax[0].set_title('Loss', fontsize=20)
-ax[0].legend()
-
-# Accuracy plot
-ax[1].plot(x, result_df.accuracy, label='accuracy', linewidth=2)
-ax[1].plot(x, result_df.val_accuracy, label='val_accuracy', linewidth=2, ls='-.', c='r')
-ax[1].set_title('Accuracy', fontsize=20)
-ax[1].legend()
-
-# Learning rate plot
-ax[2].plot(x, result_df.lr, label='learning_rate', linewidth=2)
-ax[2].set_title('Learning Rate', fontsize=20)
-ax[2].set_xlabel('Epochs')
-ax[2].legend()
-
-plt.show()
-
-# Confusion Matrix and Classification Report
-def evaluate_model_performance(model, val_generator, class_labels):
-    true_labels = val_generator.classes
-    predictions = model.predict(val_generator, steps=len(val_generator))
-    predicted_labels = np.argmax(predictions, axis=1)
-    report = classification_report(true_labels, predicted_labels, target_names=class_labels)
-    print(report)
-    cm = confusion_matrix(true_labels, predicted_labels)
-    plt.figure(figsize=(15, 10))
-    sns.heatmap(cm, annot=True, fmt='d', xticklabels=class_labels, yticklabels=class_labels, cmap='Blues')
-    plt.xlabel('Predicted Labels')
-    plt.ylabel('True Labels')
-    plt.show()
-
-class_labels = list(train_generator.class_indices.keys())
-evaluate_model_performance(best_model, test_generator, class_labels)
+if st.button("Hiển thị Confusion Matrix"):
+    display_confusion_matrix()
