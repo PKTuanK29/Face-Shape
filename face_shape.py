@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # Đảm bảo thư viện matplotlib đã được cài đặt
 import shutil
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from PIL import Image
 import seaborn as sns
 from termcolor import colored
-import matplotlib.pyplot as plt
 from tensorflow import keras
 from tensorflow.keras import layers, models
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
@@ -21,10 +20,12 @@ from tensorflow.keras.layers import Layer
 from keras.utils import plot_model
 from tensorflow.keras import optimizers
 from pathlib import Path
-import os.path
+import os
 from sklearn.metrics import classification_report, confusion_matrix
 import itertools
 from google.colab import drive
+
+# Mount Google Drive
 drive.mount('/content/drive')
 
 # Define the dataset directories
@@ -32,11 +33,12 @@ DATA_DIR = '/content/drive/MyDrive/archive/FaceShape Dataset'
 TRAIN_DIR = os.path.join(DATA_DIR, 'training_set')
 TEST_DIR = os.path.join(DATA_DIR, 'testing_set')
 
+# Function to check the number of classes
 def num_of_classes(folder_dir, folder_name):
     classes = [class_name for class_name in os.listdir(folder_dir)]
     print(f'Number of classes in {folder_name} folder: {len(classes)}')
 
-# Check the number of classes in train and test directories
+# Check number of classes in train and test directories
 num_of_classes(TRAIN_DIR, 'train')
 num_of_classes(TEST_DIR, 'test')
 
@@ -121,7 +123,7 @@ test_generator = test_datagen.flow_from_dataframe(
     shuffle=False
 )
 
-# Load the pre-trained MobileNetV2 model without the top layer
+# Load pre-trained MobileNetV2 model without top layer
 pre_trained_model = MobileNetV2(
     input_shape=(224, 224, 3),
     include_top=False,
@@ -212,19 +214,7 @@ def evaluate_model_performance(model, val_generator, class_labels):
     sns.heatmap(cm, annot=True, fmt='d', xticklabels=class_labels, yticklabels=class_labels, cmap='Blues')
     plt.xlabel('Predicted Labels')
     plt.ylabel('True Labels')
-    plt.title('Confusion Matrix')
     plt.show()
 
-evaluate_model_performance(best_model, test_generator, classes)
-
-# Image prediction function
-def preprocess_image(image_path):
-    img = Image.open(image_path).resize((224, 224))
-    img_array = np.array(img) / 255.0
-    return np.expand_dims(img_array, axis=0)
-
-image_path = '/path/to/your/image.jpg'
-preprocessed_image = preprocess_image(image_path)
-predictions = best_model.predict(preprocessed_image)
-predicted_class = classes[np.argmax(predictions)]
-print(f'Predicted class: {predicted_class}')
+class_labels = list(train_generator.class_indices.keys())
+evaluate_model_performance(best_model, test_generator, class_labels)
