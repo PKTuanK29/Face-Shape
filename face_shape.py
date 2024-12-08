@@ -88,7 +88,6 @@ test_df = create_df(TEST_DIR)
 print(colored(f'Number of samples in train : {len(train_df)}', 'blue', attrs=['bold']))
 # print(colored(f'Number of samples in validation : {len(validation_df)}', 'blue', attrs=['bold']))
 print(colored(f'Number of samples test : {len(test_df)}', 'blue', attrs=['bold']
-
 # Create a DataFrame with one Label of each category
 df_unique = train_df.copy().drop_duplicates(subset=["label"]).reset_index()
 
