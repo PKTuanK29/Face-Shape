@@ -3,15 +3,13 @@ import numpy as np
 from PIL import Image
 import tensorflow as tf
 import matplotlib.pyplot as plt
-import os
 
-# Kiểm tra nếu tệp mô hình đã có trong thư mục cục bộ
-model_path = 'MyModel.keras'
-if not os.path.exists(model_path):
-    st.error(f"Mô hình không tìm thấy tại {model_path}. Vui lòng tải lại mô hình.")
-
-# Load mô hình đã huấn luyện
-model = tf.keras.models.load_model(model_path)
+# Kiểm tra nếu mô hình đã có sẵn
+try:
+    model = tf.keras.models.load_model(r'C:\Users\HP\Downloads\MyModel.keras')
+except Exception as e:
+    st.error(f"Không thể tải mô hình: {e}")
+    model = None
 
 # Nhãn của các lớp
 class_labels = ['Heart', 'Oblong', 'Oval', 'Round', 'Square']
@@ -46,17 +44,20 @@ if uploaded_file is not None:
     st.image(img, caption="Ảnh đã tải lên", use_column_width=True)
     st.write("")
     
-    # Dự đoán ảnh
-    predictions, predicted_label, predicted_prob = predict_image(uploaded_file, model, class_labels)
+    # Kiểm tra mô hình và dự đoán
+    if model is not None:
+        predictions, predicted_label, predicted_prob = predict_image(uploaded_file, model, class_labels)
 
-    # Hiển thị kết quả dự đoán
-    st.write(f"Dự đoán: {predicted_label} với xác suất {predicted_prob:.2f}")
-    
-    # Hiển thị đồ thị về kết quả dự đoán
-    st.subheader("Đồ thị dự đoán")
-    fig, ax = plt.subplots()
-    ax.bar(class_labels, predictions[0])  # Dùng predictions đã có sẵn
-    ax.set_ylabel('Xác suất')
-    ax.set_xlabel('Hình dáng khuôn mặt')
-    ax.set_title('Dự đoán xác suất của từng lớp')
-    st.pyplot(fig)
+        # Hiển thị kết quả dự đoán
+        st.write(f"Dự đoán: {predicted_label} với xác suất {predicted_prob:.2f}")
+        
+        # Hiển thị đồ thị về kết quả dự đoán
+        st.subheader("Đồ thị dự đoán")
+        fig, ax = plt.subplots()
+        ax.bar(class_labels, predictions[0])  # Dùng predictions đã có sẵn
+        ax.set_ylabel('Xác suất')
+        ax.set_xlabel('Hình dáng khuôn mặt')
+        ax.set_title('Dự đoán xác suất của từng lớp')
+        st.pyplot(fig)
+    else:
+        st.error("Không thể tải mô hình, vui lòng thử lại sau.")
